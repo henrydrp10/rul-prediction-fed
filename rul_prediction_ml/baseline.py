@@ -268,24 +268,43 @@ cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
 
 def cnn_model_builder(hp):
 
-    hp_conv1 = hp.Int('conv1', min_value=128, max_value=192, step=64)
-    hp_conv2 = hp.Int('conv2', min_value=64, max_value=128, step=32)
-    hp_conv3 = hp.Int('conv3', min_value=32, max_value=64, step=16)
+    hp_conv1 = hp.Int('conv1', min_value=128, max_value=196, step=64)
+    hp_conv2 = hp.Int('conv2', min_value=64, max_value=96, step=32)
+    hp_conv3 = hp.Int('conv3', min_value=16, max_value=48, step=16)
 
-    hp_kernel = hp.Choice('kernel', values=[3, 5, 7])
-    hp_learning_rate = hp.Choice('learning_rate', values=[0.001, 0.005, 0.01, 0.05, 0.1])
+    hp_lstm1 = hp.Int('lstm1', min_value=128, max_value=196, step=64)
+    hp_lstm2 = hp.Int('lstm2', min_value=64, max_value=96, step=32)
+    hp_lstm3 = hp.Int('lstm3', min_value=16, max_value=48, step=16)
 
-    cnn_model = Sequential()
-    cnn_model.add(Convolution1D(hp_conv1, hp_kernel, input_shape = (window_length, cnn_tr_data.shape[2])))
-    cnn_model.add(Convolution1D(hp_conv2, hp_kernel, activation = 'relu'))
-    cnn_model.add(Convolution1D(hp_conv3, hp_kernel, activation = 'relu'))
-    cnn_model.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
-    cnn_model.add(Dense(1, activation = 'relu'))
+    hp_kernel = hp.Choice('kernel', values=[3])
+    hp_learning_rate = hp.Choice('learning_rate', values=[0.001, 0.005, 0.01])
 
-    cnn_model.compile(optimizer=keras.optimizers.Adam(learning_rate = hp_learning_rate),
+    cnn = Sequential()
+    cnn.add(Convolution1D(hp_conv1, hp_kernel, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+    cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+    cnn.add(Convolution1D(hp_conv2, hp_kernel, activation='relu'))
+    cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+    cnn.add(Convolution1D(hp_conv3, hp_kernel, activation='relu'))
+    cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+    cnn.add(LSTM(hp_lstm1, activation = 'tanh', return_sequences = True))
+    cnn.add(LSTM(hp_lstm2, activation = 'tanh', return_sequences = True))
+    cnn.add(LSTM(hp_lstm3, activation = 'tanh'))
+    cnn.add(Dense(1))
+
+    cnn.compile(optimizer=keras.optimizers.Adam(learning_rate = hp_learning_rate),
                 loss=keras.losses.MeanSquaredError())
 
-    return cnn_model
+    # cnn_model = Sequential()
+    # cnn_model.add(Convolution1D(hp_conv1, hp_kernel, input_shape = (window_length, cnn_tr_data.shape[2])))
+    # cnn_model.add(Convolution1D(hp_conv2, hp_kernel, activation = 'relu'))
+    # cnn_model.add(Convolution1D(hp_conv3, hp_kernel, activation = 'relu'))
+    # cnn_model.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
+    # cnn_model.add(Dense(1, activation = 'relu'))
+
+    # cnn_model.compile(optimizer=keras.optimizers.Adam(learning_rate = hp_learning_rate),
+    #             loss=keras.losses.MeanSquaredError())
+
+    return cnn
 
 cnn_tuner = kt.BayesianOptimization(cnn_model_builder,
                                     objective='val_loss',
@@ -295,11 +314,12 @@ cnn_tuner = kt.BayesianOptimization(cnn_model_builder,
 
 # CNN - Evaluation
 
-cnn_tuner.search(cnn_tr_data, cnn_tr_labels, epochs=30, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+cnn_tuner.search(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
 best_cnn_hps = cnn_tuner.get_best_hyperparameters(num_trials=1)[0]
 
 best_cnn_model = cnn_tuner.hypermodel.build(best_cnn_hps)
-cnn_history = best_cnn_model.fit(cnn_tr_data, cnn_tr_labels, epochs=100, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+best_cnn_model.save_weights('cnn_lstm_weights.h5')
+cnn_history = best_cnn_model.fit(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
 
 plot_loss(cnn_history)
 
