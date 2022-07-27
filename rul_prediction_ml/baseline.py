@@ -20,15 +20,9 @@ from lifelines.statistics import proportional_hazard_test
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import export_graphviz
-import pydot
 
-from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.svm import SVR
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-
-import random
-import torchinfo
 
 # seed = 35
 # random.seed(seed)
@@ -41,11 +35,11 @@ print(f"TensorFlow has access to the following devices:\n{tf.config.list_physica
 # See TensorFlow version
 print(f"TensorFlow version: {tf.__version__}")
 
-train_data_full_df = pd.read_csv('../data_analysis/fd001-scaled_train_data.csv', sep=' ')
-test_data_df = pd.read_csv('../data_analysis/fd001-scaled_test_data.csv', sep=' ')
+train_data_full_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_train.csv', sep=' ')
+test_data_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_test.csv', sep=' ')
 
-train_labels_full_df = pd.read_csv('../data_analysis/fd001-training_labels.csv', sep=' ')
-test_labels_df = pd.read_csv('../data_analysis/fd001-testing_labels.csv', sep=' ')
+train_labels_full_df = pd.read_csv('../data_analysis/fd001/fd001-training_labels.csv', sep=' ')
+test_labels_df = pd.read_csv('../data_analysis/fd001/fd001-testing_labels.csv', sep=' ')
 test_labels_at_break_df = pd.read_csv('../TED/CMAPSSData/RUL_FD001.txt', sep=' ', header=None)
 
 train_full_df = train_data_full_df.copy()
@@ -203,7 +197,7 @@ def plot_loss(fit_history):
     plt.show()
 
 # TESTING FUNCTION
-def test(actual, pred, mode = 'Test'):
+def testing(actual, pred, mode = 'Test'):
     mse = mean_squared_error(actual, pred)
     rmse = np.sqrt(mse)
     variance = r2_score(actual, pred)
@@ -240,59 +234,61 @@ mlp_tuner = kt.BayesianOptimization(mlp_model_builder,
 
 # MLP - Evaluation
 
-# mlp_tuner.search(train_full, train_labels_full, epochs=50, validation_data = (val_set, val_labels), batch_size = 256)
-# best_mlp_hps = mlp_tuner.get_best_hyperparameters(num_trials=1)[0]
+print(train_full_df.columns)
 
-# best_mlp_model = mlp_tuner.hypermodel.build(best_mlp_hps)
-# mlp_history = best_mlp_model.fit(train_full, train_labels_full, epochs=100, validation_data = (val_set, val_labels), batch_size = 256)
+mlp_tuner.search(train_full, train_labels_full, epochs=50, validation_data = (val_set, val_labels), batch_size = 128)
+best_mlp_hps = mlp_tuner.get_best_hyperparameters(num_trials=1)[0]
 
-# plot_loss(mlp_history)
+best_mlp_model = mlp_tuner.hypermodel.build(best_mlp_hps)
+mlp_history = best_mlp_model.fit(train_full, train_labels_full, epochs=100, validation_data = (val_set, val_labels), batch_size = 128)
 
-# train_full_pred = best_mlp_model.predict(train_full)
-# test(train_labels_full, train_full_pred, 'Train')
+plot_loss(mlp_history)
 
-# test_at_break_pred = best_mlp_model.predict(test_at_break)
-# test(test_labels_at_break, test_at_break_pred)
+train_full_pred = best_mlp_model.predict(train_full)
+testing(train_labels_full, train_full_pred, 'Train')
+
+test_at_break_pred = best_mlp_model.predict(test_at_break)
+testing(test_labels_at_break, test_at_break_pred)
 
 # CNN - Data preprocessing
 
-window_length = 20
-cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
-cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
+# window_length = 20
+# cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
+# cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
 
-cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
-cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
-cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
+# cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
+# cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
+# cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
 
 # CNN - Model
 
-def cnn_model_builder(hp):
+# def cnn_model_builder(hp):
 
-    hp_conv1 = hp.Int('conv1', min_value=128, max_value=196, step=64)
-    hp_conv2 = hp.Int('conv2', min_value=64, max_value=96, step=32)
-    hp_conv3 = hp.Int('conv3', min_value=16, max_value=48, step=16)
+#     hp_conv1 = hp.Int('conv1', min_value=128, max_value=196, step=64)
+#     hp_conv2 = hp.Int('conv2', min_value=64, max_value=96, step=32)
+#     hp_conv3 = hp.Int('conv3', min_value=16, max_value=48, step=16)
 
-    hp_lstm1 = hp.Int('lstm1', min_value=128, max_value=196, step=64)
-    hp_lstm2 = hp.Int('lstm2', min_value=64, max_value=96, step=32)
-    hp_lstm3 = hp.Int('lstm3', min_value=16, max_value=48, step=16)
+#     hp_lstm1 = hp.Int('lstm1', min_value=128, max_value=196, step=64)
+#     hp_lstm2 = hp.Int('lstm2', min_value=64, max_value=96, step=32)
+#     hp_lstm3 = hp.Int('lstm3', min_value=16, max_value=48, step=16)
 
-    hp_kernel = hp.Choice('kernel', values=[3])
-    hp_learning_rate = hp.Choice('learning_rate', values=[0.001, 0.005, 0.01])
+#     hp_kernel = hp.Choice('kernel', values=[3])
+#     hp_learning_rate = hp.Choice('learning_rate', values=[0.001, 0.005, 0.01])
 
-    cnn = Sequential()
-    cnn.add(Convolution1D(hp_conv1, hp_kernel, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
-    cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-    cnn.add(Convolution1D(hp_conv2, hp_kernel, activation='relu'))
-    cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-    cnn.add(Convolution1D(hp_conv3, hp_kernel, activation='relu'))
-    cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-    cnn.add(LSTM(hp_lstm1, activation = 'tanh', return_sequences = True))
-    cnn.add(LSTM(hp_lstm2, activation = 'tanh', return_sequences = True))
-    cnn.add(LSTM(hp_lstm3, activation = 'tanh'))
-    cnn.add(Dense(1))
+#     cnn = Sequential()
+#     cnn.add(Convolution1D(hp_conv1, hp_kernel, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+#     cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+#     cnn.add(Convolution1D(hp_conv2, hp_kernel, activation='relu'))
+#     cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+#     cnn.add(Convolution1D(hp_conv3, hp_kernel, activation='relu'))
+#     cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+#     cnn.add(LSTM(hp_lstm1, activation = 'tanh', return_sequences = True))
+#     cnn.add(LSTM(hp_lstm2, activation = 'tanh', return_sequences = True))
+#     cnn.add(LSTM(hp_lstm3, activation = 'tanh'))
+#     cnn.add(Dense(1))
 
-    cnn.compile(optimizer=keras.optimizers.Adam(learning_rate = hp_learning_rate),
-                loss=keras.losses.MeanSquaredError())
+#     cnn.compile(optimizer=keras.optimizers.Adam(learning_rate = hp_learning_rate),
+#                 loss=keras.losses.MeanSquaredError())
 
     # cnn_model = Sequential()
     # cnn_model.add(Convolution1D(hp_conv1, hp_kernel, input_shape = (window_length, cnn_tr_data.shape[2])))
@@ -304,30 +300,30 @@ def cnn_model_builder(hp):
     # cnn_model.compile(optimizer=keras.optimizers.Adam(learning_rate = hp_learning_rate),
     #             loss=keras.losses.MeanSquaredError())
 
-    return cnn
+    # return cnn
 
-cnn_tuner = kt.BayesianOptimization(cnn_model_builder,
-                                    objective='val_loss',
-                                    max_trials = 9,
-                                    directory='baseline_models',
-                                    project_name='cnn_lstm')
+# cnn_tuner = kt.BayesianOptimization(cnn_model_builder,
+#                                     objective='val_loss',
+#                                     max_trials = 9,
+#                                     directory='baseline_models',
+#                                     project_name='cnn_lstm')
 
 # CNN - Evaluation
 
-cnn_tuner.search(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
-best_cnn_hps = cnn_tuner.get_best_hyperparameters(num_trials=1)[0]
+# cnn_tuner.search(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+# best_cnn_hps = cnn_tuner.get_best_hyperparameters(num_trials=1)[0]
 
-best_cnn_model = cnn_tuner.hypermodel.build(best_cnn_hps)
-best_cnn_model.save_weights('cnn_lstm_weights.h5')
-cnn_history = best_cnn_model.fit(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+# best_cnn_model = cnn_tuner.hypermodel.build(best_cnn_hps)
+# best_cnn_model.save_weights('cnn_lstm_weights.h5')
+# cnn_history = best_cnn_model.fit(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
 
-plot_loss(cnn_history)
+# plot_loss(cnn_history)
 
-train_cnn_pred = best_cnn_model.predict(cnn_tr_data)
-test(cnn_tr_labels, train_cnn_pred, 'Train')
+# train_cnn_pred = best_cnn_model.predict(cnn_tr_data)
+# test(cnn_tr_labels, train_cnn_pred, 'Train')
 
-test_cnn_pred = best_cnn_model.predict(cnn_test_data)
-test(cnn_test_labels, test_cnn_pred)
+# test_cnn_pred = best_cnn_model.predict(cnn_test_data)
+# test(cnn_test_labels, test_cnn_pred)
 
 # # LSTM -- Same data as CNN
 

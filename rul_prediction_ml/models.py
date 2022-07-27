@@ -190,32 +190,41 @@ def plot_loss(fit_history):
     plt.show()
 
 # TESTING FUNCTION
-def test(actual, pred, mode = 'Test'):
+def testing(actual, pred, mode = 'Test'):
     mse = mean_squared_error(actual, pred)
     rmse = np.sqrt(mse)
     variance = r2_score(actual, pred)
     print(mode + ' set RMSE: ' + str(rmse) + ', R2: ' + str(variance))
 
-window_length = 20
-cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
-cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
 
-cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
-cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
-cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
+## MLP ----------------------------------------------------------------------------------    
 
-cnn = Sequential()
-cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
-cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-cnn.add(Convolution1D(64, 3, activation='relu'))
-cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-cnn.add(Convolution1D(32, 3, activation='relu'))
-cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-cnn.add(LSTM(128, activation = 'tanh', return_sequences = True))
-cnn.add(LSTM(64, activation = 'tanh', return_sequences = True))
-cnn.add(LSTM(32, activation = 'tanh'))
-# cnn.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
-cnn.add(Dense(1))
+mlp = Sequential()
+mlp.add()
+
+
+## CNN ----------------------------------------------
+
+# window_length = 20
+# cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
+# cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
+
+# cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
+# cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
+# cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
+
+# cnn = Sequential()
+# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# cnn.add(Convolution1D(64, 3, activation='relu'))
+# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# cnn.add(Convolution1D(32, 3, activation='relu'))
+# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# cnn.add(LSTM(128, activation = 'tanh', return_sequences = True))
+# cnn.add(LSTM(64, activation = 'tanh', return_sequences = True))
+# cnn.add(LSTM(32, activation = 'tanh'))
+# # cnn.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
+# cnn.add(Dense(1))
 
 # cnn = Sequential()
 # cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
@@ -242,17 +251,17 @@ cnn.add(Dense(1))
 # lstm.add(LSTM(32, activation = 'relu'))
 # lstm.add(Dense(1))
 
-cnn.compile(loss='mean_squared_error', optimizer = 'adam')   
-cnn_history = cnn.fit(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
-# plot_loss(cnn_history)
+# cnn.compile(loss='mean_squared_error', optimizer = 'adam')   
+# cnn_history = cnn.fit(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+# # plot_loss(cnn_history)
 
-train_cnn_pred = cnn.predict(cnn_tr_data)
-test(cnn_tr_labels, train_cnn_pred, 'Train')
+# train_cnn_pred = cnn.predict(cnn_tr_data)
+# test(cnn_tr_labels, train_cnn_pred, 'Train')
 
-test_cnn_pred = cnn.predict(cnn_test_data)
-test(cnn_test_labels, test_cnn_pred)
+# test_cnn_pred = cnn.predict(cnn_test_data)
+# test(cnn_test_labels, test_cnn_pred)
 
-cnn.save_weights('cnn_weights.h5')
+# cnn.save_weights('cnn_weights.h5')
 
 # lstm.compile(loss='mean_squared_error', optimizer='adam')  
 # lstm_history = lstm.fit(cnn_tr_data, cnn_tr_labels, epochs=25, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 128)
