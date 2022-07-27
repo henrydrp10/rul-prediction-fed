@@ -13,6 +13,8 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 import pyclustering
 import tslearn
 import pymannkendall as mk
+from tslearn.clustering import TimeSeriesKMeans
+from tslearn.utils import to_time_series_dataset
 
 # %% [markdown]
 # ## Data Preprocessing
@@ -301,9 +303,6 @@ test_joined_lowess_df.to_csv('./fd003-smoothed_test.csv', sep=' ', columns=test_
 # ## Fault modes: Clustering engines
 
 # %%
-from tslearn.clustering import TimeSeriesKMeans
-from tslearn.utils import to_time_series_dataset
-
 sensor_matrices = []
 for sensor in ms_used:
     sensor_matrix = [] 
