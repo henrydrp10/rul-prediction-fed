@@ -1,6 +1,7 @@
 from turtle import window_width
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import learning_curve
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -28,24 +29,26 @@ from sklearn.svm import SVR
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-train_data_full_df = pd.read_csv('../data_analysis/fd001-scaled_train_data.csv', sep=' ')
-test_data_df = pd.read_csv('../data_analysis/fd001-scaled_test_data.csv', sep=' ')
+train_data_full_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_train.csv', sep=' ')
+test_data_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_test.csv', sep=' ')
 
-train_labels_full_df = pd.read_csv('../data_analysis/fd001-training_labels.csv', sep=' ')
-test_labels_df = pd.read_csv('../data_analysis/fd001-testing_labels.csv', sep=' ')
+train_labels_full_df = pd.read_csv('../data_analysis/fd001/fd001-training_labels.csv', sep=' ')
+test_labels_df = pd.read_csv('../data_analysis/fd001/fd001-testing_labels.csv', sep=' ')
 test_labels_at_break_df = pd.read_csv('../TED/CMAPSSData/RUL_FD001.txt', sep=' ', header=None)
+
+print(train_data_full_df.shape)
+print(test_data_df.shape)
+print(train_labels_full_df.shape)
+print(test_labels_df.shape)
+print(test_labels_at_break_df.shape)
 
 train_full_df = train_data_full_df.copy()
 test_df = test_data_df.copy()
 train_labels_full_df = train_labels_full_df.copy().clip(upper=125)
 test_labels_df = test_labels_df.copy()
 
-used_sensors = []
-used_sensors.append("ID")
-used_sensors.append("Cycle")
-for i in range(1, 22):
-    if i not in [1, 5, 6, 10, 16, 18, 19]:
-        used_sensors.append("SensorMeasure" + str(i))
+used_sensors = train_full_df.columns
+ms_used = used_sensors[2:]
 
 train_full_df = train_full_df[used_sensors]
 test_df = test_df[used_sensors]
@@ -196,35 +199,79 @@ def testing(actual, pred, mode = 'Test'):
     variance = r2_score(actual, pred)
     print(mode + ' set RMSE: ' + str(rmse) + ', R2: ' + str(variance))
 
+window_length = 20
+cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
+cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
 
-## MLP ----------------------------------------------------------------------------------    
+cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
+cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
+cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
 
-mlp = Sequential()
-mlp.add()
+################### MLP ###############################################################  
+
+# mlp_model = Sequential()
+# mlp_model.add(Dense(32, activation = 'relu', input_dim = train_data_full_df[ms_used].shape[-1]))
+# mlp_model.add(Dropout(0.25))
+# mlp_model.add(Dense(64, activation = 'relu'))
+# mlp_model.add(Dropout(0.25))
+# mlp_model.add(Dense(128, activation = 'relu'))
+# mlp_model.add(Dense(1))
+
+# mlp_model.compile(optimizer = keras.optimizers.Adam(learning_rate = 0.003), loss = keras.losses.MeanSquaredError())
+
+# mlp_history = mlp_model.fit(train_set_df[ms_used].values, train_set_labels, 
+#                             validation_data = (val_set_df[ms_used].values, val_labels), 
+#                             epochs = 75, batch_size = 128)
+                        
+# plot_loss(mlp_history)
+
+# train_mlp_pred = mlp_model.predict(train_data_full_df[ms_used].values)
+# testing(train_labels_full, train_mlp_pred, 'Train')
+
+# test_mlp_pred = mlp_model.predict(test_at_break_df[ms_used].values)
+# testing(test_labels_at_break, test_mlp_pred)
+
+################### CNN ###############################################################
+
+cnn = Sequential()
+cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+cnn.add(Convolution1D(64, 3, activation='relu'))
+cnn.add(Convolution1D(22, 3, activation='relu'))
+cnn.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
+cnn.add(Dense(64, activation = 'relu'))
+cnn.add(Dense(128, activation = 'relu'))
+cnn.add(Dense(1))
+
+cnn.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))   
+cnn_history = cnn.fit(cnn_tr_data, cnn_tr_labels, epochs=50, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+plot_loss(cnn_history)
+
+train_cnn_pred = cnn.predict(cnn_tr_data)
+testing(cnn_tr_labels, train_cnn_pred, 'Train')
+
+test_cnn_pred = cnn.predict(cnn_test_data)
+testing(cnn_test_labels, test_cnn_pred)
 
 
-## CNN ----------------------------------------------
+############## LSTM ##############################################################
 
-# window_length = 20
-# cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
-# cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
+# lstm = Sequential()
+# lstm.add(LSTM(128, activation = 'relu', return_sequences = True, input_shape=(window_length, cnn_tr_data.shape[2])))
+# lstm.add(LSTM(64, activation = 'relu', return_sequences = True))
+# lstm.add(LSTM(32, activation = 'relu'))
+# lstm.add(Dense(1))
 
-# cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
-# cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
-# cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
+# lstm.compile(loss='mean_squared_error', optimizer='adam')  
+# lstm_history = lstm.fit(cnn_tr_data, cnn_tr_labels, epochs=25, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 128)
+# plot_loss(lstm_history)
 
-# cnn = Sequential()
-# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
-# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-# cnn.add(Convolution1D(64, 3, activation='relu'))
-# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-# cnn.add(Convolution1D(32, 3, activation='relu'))
-# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-# cnn.add(LSTM(128, activation = 'tanh', return_sequences = True))
-# cnn.add(LSTM(64, activation = 'tanh', return_sequences = True))
-# cnn.add(LSTM(32, activation = 'tanh'))
-# # cnn.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
-# cnn.add(Dense(1))
+# train_cnn_pred = lstm.predict(cnn_tr_data)
+# test(cnn_tr_labels, train_cnn_pred, 'Train')
+
+# test_cnn_pred = lstm.predict(cnn_test_data)
+# test(cnn_test_labels, test_cnn_pred)
+
+############## CNN + LSTM ########################################################
 
 # cnn = Sequential()
 # cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
@@ -244,31 +291,25 @@ mlp.add()
 # cnn.add(Bidirectional(LSTM(512, activation = 'relu')))
 # cnn.add(Dense(1))
 
+# cnn = Sequential()
+# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# cnn.add(Convolution1D(64, 3, activation='relu'))
+# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# cnn.add(Convolution1D(32, 3, activation='relu'))
+# cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# cnn.add(LSTM(128, activation = 'relu', return_sequences = True))
+# cnn.add(LSTM(64, activation = 'relu', return_sequences = True))
+# cnn.add(LSTM(32, activation = 'relu'))
+# # cnn.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
+# cnn.add(Dense(1))
 
-# lstm = Sequential()
-# lstm.add(LSTM(128, activation = 'relu', return_sequences = True, input_shape=(window_length, cnn_tr_data.shape[2])))
-# lstm.add(LSTM(64, activation = 'relu', return_sequences = True))
-# lstm.add(LSTM(32, activation = 'relu'))
-# lstm.add(Dense(1))
-
-# cnn.compile(loss='mean_squared_error', optimizer = 'adam')   
-# cnn_history = cnn.fit(cnn_tr_data, cnn_tr_labels, epochs=250, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
-# # plot_loss(cnn_history)
+# cnn.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.003))   
+# cnn_history = cnn.fit(cnn_tr_data, cnn_tr_labels, epochs=18, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+# plot_loss(cnn_history)
 
 # train_cnn_pred = cnn.predict(cnn_tr_data)
-# test(cnn_tr_labels, train_cnn_pred, 'Train')
+# testing(cnn_tr_labels, train_cnn_pred, 'Train')
 
 # test_cnn_pred = cnn.predict(cnn_test_data)
-# test(cnn_test_labels, test_cnn_pred)
-
-# cnn.save_weights('cnn_weights.h5')
-
-# lstm.compile(loss='mean_squared_error', optimizer='adam')  
-# lstm_history = lstm.fit(cnn_tr_data, cnn_tr_labels, epochs=25, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 128)
-# # plot_loss(lstm_history)
-
-# train_cnn_pred = lstm.predict(cnn_tr_data)
-# test(cnn_tr_labels, train_cnn_pred, 'Train')
-
-# test_cnn_pred = lstm.predict(cnn_test_data)
-# test(cnn_test_labels, test_cnn_pred)
+# testing(cnn_test_labels, test_cnn_pred)
