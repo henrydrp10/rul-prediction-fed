@@ -8,85 +8,17 @@ from keras import Sequential
 from keras.callbacks import ModelCheckpoint
 from keras.layers import LSTM, Convolution1D, MaxPool1D, GlobalAveragePooling1D, Dense, Dropout, Bidirectional
 from sklearn.metrics import mean_squared_error
+import argparse
 
-train_data_full_df = pd.read_csv('../../data_analysis/fd001/fd001-scaled_train.csv', sep=' ')
-test_data_df = pd.read_csv('../../data_analysis/fd001/fd001-scaled_test.csv', sep=' ')
+parser = argparse.ArgumentParser(description = 'Choose partition number')
+parser.add_argument('--partition', type = int, help = 'Partition Number')
+args = parser.parse_args()
 
-train_labels_full_df = pd.read_csv('../../data_analysis/fd001/fd001-training_labels.csv', sep=' ')
-test_labels_df = pd.read_csv('../../data_analysis/fd001/fd001-testing_labels.csv', sep=' ')
-test_labels_at_break_df = pd.read_csv('../../TED/CMAPSSData/RUL_FD001.txt', sep=' ', header=None)
+train_df = pd.read_csv('../FL-data/data/fd001/2 workers/90-10/train_partition_' + str(args.partition) + '.csv', sep=',')
+test_df = pd.read_csv('../FL-data/data/fd001/2 workers/90-10/test_partition_' + str(args.partition) + '.csv', sep=',')
 
-print(train_data_full_df.shape)
-print(test_data_df.shape)
-print(train_labels_full_df.shape)
-print(test_labels_df.shape)
-print(test_labels_at_break_df.shape)
-
-train_full_df = train_data_full_df.copy()
-test_df = test_data_df.copy()
-train_labels_full_df = train_labels_full_df.copy().clip(upper=125)
-test_labels_df = test_labels_df.copy()
-
-used_sensors = train_full_df.columns
-ms_used = used_sensors[2:]
-
-train_full_df = train_full_df[used_sensors]
-test_df = test_df[used_sensors]
-
-# Processed data - Numpy
-train_full = train_full_df.values
-test = test_df.values
-train_labels_full = train_labels_full_df.values.squeeze()
-test_labels = test_labels_df.values.squeeze()
-
-joined_train_rul = train_full_df.copy()
-joined_train_rul['RUL'] = train_labels_full_df['RUL']
-test_at_break_df = test_df.groupby('ID').last().reset_index()
-test_at_break = test_at_break_df.values
-
-train_labels_at_break = joined_train_rul.groupby('ID').last().reset_index()['RUL'].values
-test_labels_at_break = test_labels_at_break_df.values[:, 0]
-
-train_groupby_full_df = train_full_df.groupby('ID', sort=False)
-test_groupby_df = test_df.groupby('ID', sort=False)
-
-train_labels_full_df['ID'] = joined_train_rul['ID']
-train_labels_full_groupby_df = train_labels_full_df.groupby('ID', sort=False)
-
-val_indices = np.random.choice(len(train_groupby_full_df), size = int(0.2 * len(train_groupby_full_df)))
-
-val_arr = []
-train_set_arr = []
-val_labels_arr = []
-train_set_labels_arr = []
-
-for i in range(len(train_groupby_full_df)):
-    if i in val_indices:
-        val_arr.append(train_groupby_full_df.get_group(i+1))
-        val_labels_arr.append(train_labels_full_groupby_df.get_group(i+1)['RUL'])
-    else:
-        train_set_arr.append(train_groupby_full_df.get_group(i+1))
-        train_set_labels_arr.append(train_labels_full_groupby_df.get_group(i+1)['RUL'])
-
-val_set_df = val_arr[0]
-val_labels_df = val_labels_arr[0]
-for i in range(1, len(val_arr)):
-    val_set_df = pd.concat([val_set_df, val_arr[i]])
-    val_labels_df = pd.concat([val_labels_df, val_labels_arr[i]])
-
-train_set_df = train_set_arr[0]
-train_set_labels_df = train_set_labels_arr[0]
-for i in range(1, len(train_set_arr)):
-    train_set_df = pd.concat([train_set_df, train_set_arr[i]])
-    train_set_labels_df = pd.concat([train_set_labels_df, train_set_labels_arr[i]])
-
-train_set = train_set_df.values
-train_set_labels = train_set_labels_df.values
-val_set = val_set_df.values
-val_labels = val_labels_df.values
-val_labels = np.expand_dims(val_labels, axis = 1)
-train_set_labels = np.expand_dims(train_set_labels, axis = 1)
-train_labels_full = np.expand_dims(train_labels_full, axis = 1)
+train_labels_df = pd.DataFrame(train_df.pop('RUL')) 
+test_labels_df = pd.DataFrame(test_df.pop('RUL'))
 
 def get_windows(data_df, labels_df, window_length, mode = 'train'):
 
@@ -97,25 +29,26 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
         data_groupby = data_df.groupby('ID', sort=False)
         labels_groupby = labels_df.groupby('ID', sort=False)
 
-        val_indices = np.random.choice(len(data_groupby), size = int(0.2 * len(data_groupby)))
-
+        id_list = [num[0] for num in data_groupby['ID'].unique()]
+        val_indices = np.random.choice(id_list, size = int(0.2 * len(id_list)), replace = False)
+        
         tr_data_eng_arr = []
         tr_labels_eng_arr = []
 
         val_data_eng_arr = []
         val_labels_eng_arr = []
 
-        for i in range(len(data_groupby)):
+        for i in id_list:
             if i in val_indices:
-                val_data_eng_arr.append(data_groupby.get_group(i+1))
+                val_data_eng_arr.append(data_groupby.get_group(i))
             else:
-                tr_data_eng_arr.append(data_groupby.get_group(i+1))
+                tr_data_eng_arr.append(data_groupby.get_group(i))
 
-        for i in range(len(labels_groupby)):
+        for i in id_list:
             if i in val_indices:
-                val_labels_eng_arr.append(labels_groupby.get_group(i+1))
+                val_labels_eng_arr.append(labels_groupby.get_group(i))
             else:
-                tr_labels_eng_arr.append(labels_groupby.get_group(i+1))
+                tr_labels_eng_arr.append(labels_groupby.get_group(i))
 
         tr_data_windows = []
         tr_label_windows = []
@@ -143,14 +76,17 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
 
         data_groupby = data_df.groupby('ID', sort=False)
         labels_groupby = labels_df.groupby('ID', sort=False)
+
+        id_list = [num[0] for num in data_groupby['ID'].unique()]
+
         data_eng_arr = []
         labels_eng_arr = []
 
-        for i in range(len(data_groupby)):
-            data_eng_arr.append(data_groupby.get_group(i+1))
+        for i in id_list:
+            data_eng_arr.append(data_groupby.get_group(i))
 
-        for i in range(len(labels_groupby)):
-            labels_eng_arr.append(labels_groupby.get_group(i+1))
+        for i in id_list:
+            labels_eng_arr.append(labels_groupby.get_group(i))
 
         data_windows = []
         label_windows = []
@@ -162,45 +98,56 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
 
         return np.array(data_windows), np.array(label_windows)
 
+############ MODEL #######################################################
+
 window_length = 20
-cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
-cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
+X_train, y_train, X_val, y_val = get_windows(train_df, train_labels_df, window_length, mode='train')
+X_test, y_test = get_windows(test_df, test_labels_df, window_length, mode = 'test')
 
-cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
-cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
-cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
+y_train = np.expand_dims(y_train, axis=1)
+y_val = np.expand_dims(y_val, axis=1)
+y_test = np.expand_dims(y_test, axis=1)
 
 
-model = Sequential()
-model.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
-model.add(Convolution1D(64, 3, activation='relu'))
-model.add(Convolution1D(22, 3, activation='relu'))
-model.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
-model.add(Dense(64, activation = 'relu'))
-model.add(Dense(128, activation = 'relu'))
-model.add(Dense(1))
+# client_model = Sequential()
+# client_model.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, X_train.shape[-1])))
+# client_model.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# client_model.add(Convolution1D(64, 3, activation='relu'))
+# client_model.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# client_model.add(Convolution1D(32, 3, activation='relu'))
+# client_model.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
+# client_model.add(LSTM(128, activation = 'relu', return_sequences = True))
+# client_model.add(LSTM(64, activation = 'relu', return_sequences = True))
+# client_model.add(LSTM(32, activation = 'relu'))
+# client_model.add(Dense(1))
 
-model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))  
+client_model = Sequential()
+client_model.add(LSTM(128, activation = 'tanh', return_sequences = True, input_shape = (window_length, X_train.shape[-1])))
+client_model.add(LSTM(64, activation = 'tanh', return_sequences = True))
+client_model.add(LSTM(32, activation = 'tanh'))
+client_model.add(Dense(1))
+
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))  
 
 
 # Define Flower client
-class CifarClient(fl.client.NumPyClient):
+class TEDClient(fl.client.NumPyClient):
 
     def get_parameters(self, config):
-        return model.get_weights()
+        return client_model.get_weights()
 
     def fit(self, parameters, config):
-        model.set_weights(parameters)
-        model.fit(cnn_tr_data, cnn_tr_labels, epochs=50, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
-        return model.get_weights(), len(cnn_tr_data), {}
+        client_model.set_weights(parameters)
+        client_model.fit(X_train, y_train, epochs=100, validation_data = (X_val, y_val), batch_size = 256)
+        return client_model.get_weights(), len(X_train), {}
 
     def evaluate(self, parameters, config):
-        model.set_weights(parameters)
-        test_cnn_pred = model.predict(cnn_test_data)
-        mse = mean_squared_error(cnn_test_labels, test_cnn_pred)
+        client_model.set_weights(parameters)
+        test_cnn_pred = client_model.predict(X_test)
+        mse = mean_squared_error(y_test, test_cnn_pred)
         rmse = np.sqrt(mse)
-        return rmse, len(cnn_test_data), {"rmse": rmse}
+        return rmse, len(y_test), {"rmse": rmse}
 
 
 # Start Flower client
-fl.client.start_numpy_client(server_address = "127.0.0.1:8080", client=CifarClient())
+fl.client.start_numpy_client(server_address = "127.0.0.1:8080", client=TEDClient())
