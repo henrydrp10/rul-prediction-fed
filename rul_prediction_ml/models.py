@@ -11,12 +11,12 @@ from keras import Sequential
 from keras.callbacks import ModelCheckpoint
 from keras.layers import LSTM, Convolution1D, MaxPool1D, GlobalAveragePooling1D, Dense, Dropout, Bidirectional
 
-train_data_full_df = pd.read_csv('../data_analysis/fd004/fd004-scaled_train.csv', sep=' ')
-test_data_df = pd.read_csv('../data_analysis/fd004/fd004-scaled_test.csv', sep=' ')
+train_data_full_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_train.csv', sep=' ')
+test_data_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_test.csv', sep=' ')
 
-train_labels_full_df = pd.read_csv('../data_analysis/fd004/fd004-training_labels.csv', sep=' ')
-test_labels_df = pd.read_csv('../data_analysis/fd004/fd004-testing_labels.csv', sep=' ')
-test_labels_at_break_df = pd.read_csv('../TED/CMAPSSData/RUL_FD004.txt', sep=' ', header=None)
+train_labels_full_df = pd.read_csv('../data_analysis/fd001/fd001-training_labels.csv', sep=' ')
+test_labels_df = pd.read_csv('../data_analysis/fd001/fd001-testing_labels.csv', sep=' ')
+test_labels_at_break_df = pd.read_csv('../TED/CMAPSSData/RUL_FD001.txt', sep=' ', header=None)
 
 print(train_data_full_df.shape)
 print(test_data_df.shape)
@@ -251,9 +251,6 @@ plot_loss(lstm_history)
 
 train_cnn_pred = lstm.predict(cnn_tr_data)
 testing(cnn_tr_labels, train_cnn_pred, 'Train')
-
-print(cnn_test_data.shape)
-print(cnn_test_data)
 
 test_cnn_pred = lstm.predict(cnn_test_data)
 testing(cnn_test_labels, test_cnn_pred)

@@ -14,8 +14,8 @@ parser = argparse.ArgumentParser(description = 'Choose partition number')
 parser.add_argument('--partition', type = int, help = 'Partition Number')
 args = parser.parse_args()
 
-train_df = pd.read_csv('../FL-data/data/fd001/2 workers/90-10/train_partition_' + str(args.partition) + '.csv', sep=',')
-test_df = pd.read_csv('../FL-data/data/fd001/2 workers/90-10/test_partition_' + str(args.partition) + '.csv', sep=',')
+train_df = pd.read_csv('../FL-data/data/fd001/2 workers/50-50/train_partition_' + str(args.partition) + '.csv', sep=',')
+test_df = pd.read_csv('../FL-data/data/fd001/2 workers/50-50/test_partition_' + str(args.partition) + '.csv', sep=',')
 
 train_labels_df = pd.DataFrame(train_df.pop('RUL')) 
 test_labels_df = pd.DataFrame(test_df.pop('RUL'))
@@ -126,8 +126,7 @@ client_model.add(LSTM(128, activation = 'tanh', return_sequences = True, input_s
 client_model.add(LSTM(64, activation = 'tanh', return_sequences = True))
 client_model.add(LSTM(32, activation = 'tanh'))
 client_model.add(Dense(1))
-
-client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))  
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.01))  
 
 
 # Define Flower client
@@ -138,7 +137,7 @@ class TEDClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         client_model.set_weights(parameters)
-        client_model.fit(X_train, y_train, epochs=100, validation_data = (X_val, y_val), batch_size = 256)
+        client_model.fit(X_train, y_train, epochs=100, validation_data = (X_val, y_val), batch_size = 512)
         return client_model.get_weights(), len(X_train), {}
 
     def evaluate(self, parameters, config):
