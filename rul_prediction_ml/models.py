@@ -3,13 +3,18 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import learning_curve
 import matplotlib.pyplot as plt
+from sklearn import preprocessing
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn import linear_model
 
 import tensorflow as tf
 from tensorflow import keras
 from keras import Sequential
 from keras.callbacks import ModelCheckpoint
 from keras.layers import LSTM, Convolution1D, MaxPool1D, GlobalAveragePooling1D, Dense, Dropout, Bidirectional
+from keras import Sequential, backend
+from keras.layers import LSTM, Dense, Dropout, Lambda, Input, Permute, RepeatVector, multiply, Concatenate, Reshape, Attention
+from keras.models import Model
 
 train_data_full_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_train.csv', sep=' ')
 test_data_df = pd.read_csv('../data_analysis/fd001/fd001-scaled_test.csv', sep=' ')
@@ -18,11 +23,11 @@ train_labels_full_df = pd.read_csv('../data_analysis/fd001/fd001-training_labels
 test_labels_df = pd.read_csv('../data_analysis/fd001/fd001-testing_labels.csv', sep=' ')
 test_labels_at_break_df = pd.read_csv('../TED/CMAPSSData/RUL_FD001.txt', sep=' ', header=None)
 
-print(train_data_full_df.shape)
-print(test_data_df.shape)
-print(train_labels_full_df.shape)
-print(test_labels_df.shape)
-print(test_labels_at_break_df.shape)
+# print(train_data_full_df.shape)
+# print(test_data_df.shape)
+# print(train_labels_full_df.shape)
+# print(test_labels_df.shape)
+# print(test_labels_at_break_df.shape)
 
 train_full_df = train_data_full_df.copy()
 test_df = test_data_df.copy()
@@ -181,15 +186,13 @@ def testing(actual, pred, mode = 'Test'):
     variance = r2_score(actual, pred)
     print(mode + ' set RMSE: ' + str(rmse) + ', R2: ' + str(variance))
 
-print(train_full_df.columns)
-
 window_length = 20
-cnn_tr_data, cnn_tr_labels, cnn_val_data, cnn_val_labels = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
-cnn_test_data, cnn_test_labels = get_windows(test_df, test_labels_df, 20, mode = 'test')
+X_train, y_train, X_val, y_val = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
+X_test, y_test = get_windows(test_df, test_labels_df, window_length, mode = 'test')
 
-cnn_tr_labels = np.expand_dims(cnn_tr_labels, axis=1)
-cnn_val_labels = np.expand_dims(cnn_val_labels, axis=1)
-cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
+y_train = np.expand_dims(y_train, axis=1)
+y_val = np.expand_dims(y_val, axis=1)
+y_test = np.expand_dims(y_test, axis=1)
 
 ################### MLP ###############################################################  
 
@@ -218,7 +221,7 @@ cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
 ################### CNN ###############################################################
 
 # cnn = Sequential()
-# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, X_train.shape[2])))
 # cnn.add(Convolution1D(64, 3, activation='relu'))
 # cnn.add(Convolution1D(22, 3, activation='relu'))
 # cnn.add(GlobalAveragePooling1D(data_format = 'channels_last', keepdims = False))
@@ -227,38 +230,38 @@ cnn_test_labels = np.expand_dims(cnn_test_labels, axis=1)
 # cnn.add(Dense(1))
 
 # cnn.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))   
-# cnn_history = cnn.fit(cnn_tr_data, cnn_tr_labels, epochs=50, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+# cnn_history = cnn.fit(X_train, y_train, epochs=50, validation_data = (X_val, y_val), batch_size = 256)
 # plot_loss(cnn_history)
 
-# train_cnn_pred = cnn.predict(cnn_tr_data)
-# testing(cnn_tr_labels, train_cnn_pred, 'Train')
+# train_cnn_pred = cnn.predict(X_train)
+# testing(y_train, train_cnn_pred, 'Train')
 
-# test_cnn_pred = cnn.predict(cnn_test_data)
-# testing(cnn_test_labels, test_cnn_pred)
+# test_cnn_pred = cnn.predict(X_test)
+# testing(y_test, test_cnn_pred)
 
 
 ############## LSTM ##############################################################
 
-lstm = Sequential()
-lstm.add(LSTM(128, activation = 'tanh', return_sequences = True, input_shape=(window_length, cnn_tr_data.shape[2])))
-lstm.add(LSTM(64, activation = 'tanh', return_sequences = True))
-lstm.add(LSTM(32, activation = 'tanh'))
-lstm.add(Dense(1))
+# lstm = Sequential()
+# lstm.add(LSTM(128, activation = 'tanh', return_sequences = True, input_shape=(window_length, X_train.shape[2])))
+# lstm.add(LSTM(64, activation = 'tanh', return_sequences = True))
+# lstm.add(LSTM(32, activation = 'tanh'))
+# lstm.add(Dense(1))
 
-lstm.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.01))  
-lstm_history = lstm.fit(cnn_tr_data, cnn_tr_labels, epochs=50, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 512)
-plot_loss(lstm_history)
+# lstm.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.01))  
+# lstm_history = lstm.fit(X_train, y_train, epochs=50, validation_data = (X_val, y_val), batch_size = 512)
+# plot_loss(lstm_history)
 
-train_cnn_pred = lstm.predict(cnn_tr_data)
-testing(cnn_tr_labels, train_cnn_pred, 'Train')
+# train_cnn_pred = lstm.predict(X_train)
+# testing(y_train, train_cnn_pred, 'Train')
 
-test_cnn_pred = lstm.predict(cnn_test_data)
-testing(cnn_test_labels, test_cnn_pred)
+# test_cnn_pred = lstm.predict(X_test)
+# testing(y_test, test_cnn_pred)
 
 ############## CNN + LSTM ########################################################
 
 # cnn = Sequential()
-# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, X_train.shape[2])))
 # cnn.add(Dropout(0.55))
 # cnn.add(Convolution1D(64, 3, activation='relu'))
 # cnn.add(Dropout(0.55))
@@ -276,7 +279,7 @@ testing(cnn_test_labels, test_cnn_pred)
 # cnn.add(Dense(1))
 
 # cnn = Sequential()
-# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, cnn_tr_data.shape[2])))
+# cnn.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, X_train.shape[2])))
 # cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
 # cnn.add(Convolution1D(64, 3, activation='relu'))
 # cnn.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
@@ -290,7 +293,7 @@ testing(cnn_test_labels, test_cnn_pred)
 
 # cnn = Sequential()
 # cnn.add(LSTM(
-#          input_shape=(window_length, cnn_tr_data.shape[-1]),
+#          input_shape=(window_length, X_train.shape[-1]),
 #          units=100,
 #          return_sequences=True))
 # cnn.add(Dropout(0.2))
@@ -306,11 +309,120 @@ testing(cnn_test_labels, test_cnn_pred)
 # cnn.compile(loss='mean_squared_error', optimizer='adam')
 
 # cnn.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))   
-# cnn_history = cnn.fit(cnn_tr_data, cnn_tr_labels, epochs=50, validation_data = (cnn_val_data, cnn_val_labels), batch_size = 256)
+# cnn_history = cnn.fit(X_train, y_train, epochs=50, validation_data = (X_val, y_val), batch_size = 256)
 # plot_loss(cnn_history)
 
-# train_cnn_pred = cnn.predict(cnn_tr_data)
-# testing(cnn_tr_labels, train_cnn_pred, 'Train')
+# train_cnn_pred = cnn.predict(X_train)
+# testing(y_train, train_cnn_pred, 'Train')
 
-# test_cnn_pred = cnn.predict(cnn_test_data)
-# testing(cnn_test_labels, test_cnn_pred)
+# test_cnn_pred = cnn.predict(X_test)
+# testing(y_test, test_cnn_pred)
+
+############ LSTM + ATTENTION #######################################################
+
+X_train = X_train[:,:,2:]
+X_val = X_val[:,:,2:]
+X_test = X_test[:,:,2:]
+
+regr = linear_model.LinearRegression() # feature of linear coefficient
+
+def fea_extract(data): # feature extraction of two features
+    fea = []
+    # print(data.shape)
+    x = np.array(range(data.shape[0]))
+    for i in range(data.shape[1]):
+        fea.append(np.mean(data[:,i]))
+        # print(x.reshape(-1,1).shape)
+        # print(np.ravel(data[:,i]).shape)
+        regr.fit(x.reshape(-1,1),np.ravel(data[:,i]))
+        # print(np.array(fea).shape)
+        fea = fea+list(regr.coef_)
+        # print(np.array(fea).shape)
+    return fea
+
+train_extracted = []
+val_extracted = []
+test_extracted = []
+
+for window in X_train:
+    train_extracted.append(fea_extract(window))
+
+for window in X_val:
+    val_extracted.append(fea_extract(window))
+
+for window in X_test:
+    test_extracted.append(fea_extract(window))
+
+train_extracted = np.array(train_extracted)
+val_extracted = np.array(val_extracted)
+test_extracted = np.array(test_extracted)
+
+scale = preprocessing.MinMaxScaler()
+train_extracted = scale.fit_transform(train_extracted)
+val_extracted = scale.fit_transform(val_extracted)
+test_extracted = scale.fit_transform(test_extracted)
+
+# print(train_extracted.shape)
+# print(test_extracted.shape)
+# print(test_extracted.shape)
+
+
+
+
+SINGLE_ATTENTION_VECTOR = False
+
+def attention_3d_block(inputs):
+    input_dim = int(inputs.shape[2])
+    print(inputs.shape)
+    a = Permute((2, 1))(inputs)
+    print(a.shape)
+    a = Reshape((input_dim, window_length))(a) # this line is not useful. It's just to know which dimension is what.
+    print(a.shape)
+    a = Dense(window_length, activation='softmax')(a)
+    print(a.shape)
+    if SINGLE_ATTENTION_VECTOR:
+        a = Lambda(lambda x: backend.mean(x, axis=1), name='dim_reduction')(a)
+        a = RepeatVector(input_dim)(a)
+        print(a.shape)
+    a_probs = Permute((2, 1), name='attention_vec')(a)
+    print(a_probs.shape)
+    #output_attention_mul = merge([inputs, a_probs], name='attention_mul', mode='mul')
+    output_attention_mul = multiply([inputs, a_probs])
+    return output_attention_mul
+
+def custom_att(inputs):
+    x = LSTM(50, activation = 'tanh', return_sequences = False)(inputs)
+    print(x.shape)
+    x = Attention([x[-1], x])
+    return x
+
+def model_attention():
+    input_data = Input(shape=(window_length, X_train.shape[-1]))
+    input_extracted = Input(shape = (train_extracted.shape[1],))
+    ex_layer1 = Dense(50, activation = 'relu')(input_extracted)
+    ex_layer2 = Dropout(0.2)(ex_layer1)
+    ex_layer3 = Dense(10,activation = 'relu')(ex_layer2)
+    att_layer1 = attention_3d_block(input_data)
+    # att_layer1 = custom_att(input_data)
+    # att_layer1 = Attention()([query_seq_encoding, value_seq_encoding])
+    att_layer2 = LSTM(50, return_sequences=False)(att_layer1) 
+    att_layer3 = Dense(50, activation='relu')(att_layer2)
+    att_layer4 = Dropout(0.2)(att_layer3)
+    att_layer5 = Dense(10, activation='relu')(att_layer4) 
+    merged_models = Concatenate(axis = 1)([att_layer5, ex_layer3])
+    merged_layer1 = Dropout(0.2)(merged_models) 
+    merged_layer2 = Dense(1, activation='linear')(merged_layer1)
+    model = Model([input_data, input_extracted], merged_layer2)
+    return model
+
+client_model = model_attention()
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))
+
+att_history = client_model.fit([X_train, train_extracted], y_train, epochs=15, validation_data = ([X_val, val_extracted], y_val), batch_size = 100)
+plot_loss(att_history)
+
+train_pred = client_model.predict([X_train, train_extracted])
+testing(y_train, train_pred, 'Train')
+
+test_pred = client_model.predict([X_test, test_extracted]) 
+testing(y_test, test_pred)

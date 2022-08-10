@@ -1,13 +1,16 @@
 from pyexpat import model
+from tkinter import SINGLE
+from xmlrpc import client
 import flwr as fl
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
-from keras import Sequential
-from keras.callbacks import ModelCheckpoint
-from keras.layers import LSTM, Convolution1D, MaxPool1D, GlobalAveragePooling1D, Dense, Dropout, Bidirectional
+from keras import Sequential, backend
+from keras.layers import LSTM, Dense, Dropout, Lambda, Input, Permute, RepeatVector, multiply, Concatenate
+from keras.models import Model
 from sklearn.metrics import mean_squared_error
+from sklearn import linear_model
 import argparse
 
 parser = argparse.ArgumentParser(description = 'Choose partition number')
@@ -108,6 +111,23 @@ y_train = np.expand_dims(y_train, axis=1)
 y_val = np.expand_dims(y_val, axis=1)
 y_test = np.expand_dims(y_test, axis=1)
 
+regr = linear_model.LinearRegression() # feature of linear coefficient
+
+def fea_extract(data): # feature extraction of two features
+    fea = []
+    #print(data.shape)
+    x = np.array(range(data.shape[0]))
+    for i in range(data.shape[1]):
+        fea.append(np.mean(data[:,i]))
+        regr.fit(x.reshape(-1,1),np.ravel(data[:,i]))
+        print(np.array(fea).shape)
+        fea = fea+list(regr.coef_)
+        print(np.array(fea).shape)
+    return fea
+
+train_extracted = fea_extract(X_train)
+val_extracted = fea_extract(X_val)
+test_extracted = fea_extract(X_test)
 
 # client_model = Sequential()
 # client_model.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, X_train.shape[-1])))
@@ -121,13 +141,39 @@ y_test = np.expand_dims(y_test, axis=1)
 # client_model.add(LSTM(32, activation = 'relu'))
 # client_model.add(Dense(1))
 
-client_model = Sequential()
-client_model.add(LSTM(128, activation = 'tanh', return_sequences = True, input_shape = (window_length, X_train.shape[-1])))
-client_model.add(LSTM(64, activation = 'tanh', return_sequences = True))
-client_model.add(LSTM(32, activation = 'tanh'))
-client_model.add(Dense(1))
-client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.01))  
+SINGLE_ATTENTION_VECTOR = False
 
+def attention_3d_block(inputs):
+    input_dim = int(inputs.shape[2])
+    a = Permute((2, 1))(inputs)
+    a = Dense(window_length, activation='softmax')(a)
+    if SINGLE_ATTENTION_VECTOR:
+        a = Lambda(lambda x: backend.mean(x, axis=1), name='dim_reduction')(a)
+        a = RepeatVector(input_dim)(a)
+    a_probs = Permute((2, 1), name='attention_vec')(a)
+    #output_attention_mul = merge([inputs, a_probs], name='attention_mul', mode='mul')
+    output_attention_mul = multiply([inputs, a_probs])
+    return output_attention_mul
+
+def model_attention():
+    inputs = Input(shape=(window_length, X_train.shape[-1]))
+    model_input_fea = Input(shape = (train_extracted.shape[1],))
+    densefea1 = Dense(50,activation = 'relu')(model_input_fea)
+    dropfea = Dropout(0.2)(densefea1)
+    densefea2 = Dense(10,activation = 'relu')(dropfea)
+    attention_mul = attention_3d_block(inputs)
+    lstm_out = LSTM(50, return_sequences=False)(attention_mul) 
+    dense_0 = Dense(50, activation='relu')(lstm_out)
+    drop1 = Dropout(0.2)(dense_0)
+    dense_1 = Dense(10, activation='relu')(drop1) 
+    mymerge = Concatenate([dense_1, densefea2])
+    drop2 = Dropout(0.2)(mymerge) 
+    output = Dense(1, activation='linear')(drop2)
+    model = Model([inputs,model_input_fea],output)
+    return model
+
+client_model = model_attention()
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.01))
 
 # Define Flower client
 class TEDClient(fl.client.NumPyClient):
