@@ -1,4 +1,8 @@
+from http import client
+from pyexpat import model
+from re import X
 from turtle import window_width
+from unicodedata import name
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import learning_curve
@@ -11,7 +15,7 @@ import tensorflow as tf
 from tensorflow import keras
 from keras import Sequential
 from keras.callbacks import ModelCheckpoint
-from keras.layers import LSTM, Convolution1D, MaxPool1D, GlobalAveragePooling1D, Dense, Dropout, Bidirectional
+from keras.layers import LSTM, Convolution1D, MaxPool1D, GlobalAveragePooling1D, Dense, Dropout, Bidirectional, Flatten
 from keras import Sequential, backend
 from keras.layers import LSTM, Dense, Dropout, Lambda, Input, Permute, RepeatVector, multiply, Concatenate, Reshape, Attention
 from keras.models import Model
@@ -129,18 +133,20 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
         for index in range(len(tr_data_eng_arr)):
             tr_data_arr = tr_data_eng_arr[index].to_numpy()
             tr_labels_arr = tr_labels_eng_arr[index].to_numpy()
-            for t in range(tr_data_arr.shape[0] - window_length + 1):
-                tr_data_windows.append(tr_data_arr[t:t+window_length, :])
-                tr_label_windows.append(tr_labels_arr[t+window_length - 1, 0])
+            if tr_data_arr.shape[0] - window_length + 1 > 0:
+                for t in range(tr_data_arr.shape[0] - window_length + 1):
+                    tr_data_windows.append(tr_data_arr[t:t+window_length, :])
+                    tr_label_windows.append(tr_labels_arr[t+window_length - 1, 0])
 
         val_data_windows = []
         val_label_windows = []
         for index in range(len(val_data_eng_arr)):
             val_data_arr = val_data_eng_arr[index].to_numpy()
             val_labels_arr = val_labels_eng_arr[index].to_numpy()
-            for t in range(val_data_arr.shape[0] - window_length + 1):
-                val_data_windows.append(val_data_arr[t:t+window_length, :])
-                val_label_windows.append(val_labels_arr[t+window_length - 1, 0])
+            if val_data_arr.shape[0] - window_length + 1 > 0:
+                for t in range(val_data_arr.shape[0] - window_length + 1):
+                    val_data_windows.append(val_data_arr[t:t+window_length, :])
+                    val_label_windows.append(val_labels_arr[t+window_length - 1, 0])
 
         return np.array(tr_data_windows), np.array(tr_label_windows), np.array(val_data_windows), np.array(val_label_windows)
 
@@ -164,8 +170,9 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
         for index in range(len(data_eng_arr)):
             data_arr = data_eng_arr[index].to_numpy()
             labels_arr = labels_eng_arr[index].to_numpy()
-            data_windows.append(data_arr[-window_length:, :])
-            label_windows.append(labels_arr[-1, 0])
+            if data_arr.shape[0] - window_length > 0:
+                data_windows.append(data_arr[-window_length:, :])
+                label_windows.append(labels_arr[-1, 0])
 
         return np.array(data_windows), np.array(label_windows)
 
@@ -186,7 +193,7 @@ def testing(actual, pred, mode = 'Test'):
     variance = r2_score(actual, pred)
     print(mode + ' set RMSE: ' + str(rmse) + ', R2: ' + str(variance))
 
-window_length = 20
+window_length = 30
 X_train, y_train, X_val, y_val = get_windows(train_full_df, train_labels_full_df, window_length, mode='train')
 X_test, y_test = get_windows(test_df, test_labels_df, window_length, mode = 'test')
 
@@ -324,6 +331,17 @@ X_train = X_train[:,:,2:]
 X_val = X_val[:,:,2:]
 X_test = X_test[:,:,2:]
 
+# sc = preprocessing.MinMaxScaler()
+
+# for i in range(len(X_train)):
+#     X_train[i] = sc.fit_transform(X_train[i])
+
+# for i in range(len(X_val)):
+#     X_val[i] = sc.fit_transform(X_val[i])
+
+# for i in range(len(X_test)):
+#     X_test[i] = sc.fit_transform(X_test[i])
+
 regr = linear_model.LinearRegression() # feature of linear coefficient
 
 def fea_extract(data): # feature extraction of two features
@@ -357,45 +375,72 @@ train_extracted = np.array(train_extracted)
 val_extracted = np.array(val_extracted)
 test_extracted = np.array(test_extracted)
 
-scale = preprocessing.MinMaxScaler()
-train_extracted = scale.fit_transform(train_extracted)
-val_extracted = scale.fit_transform(val_extracted)
-test_extracted = scale.fit_transform(test_extracted)
+# scale = preprocessing.MinMaxScaler()
+# train_extracted = scale.fit_transform(train_extracted)
+# val_extracted = scale.fit_transform(val_extracted)
+# test_extracted = scale.fit_transform(test_extracted)
+
+# train_extracted = X_train.copy()
+# val_extracted = X_val.copy()
+# test_extracted = X_test.copy()
 
 # print(train_extracted.shape)
 # print(test_extracted.shape)
 # print(test_extracted.shape)
 
 
+def temp_spatial_fusion():
+    input_data = Input(shape=(window_length, X_train.shape[-1]))
+    cnn_layer1 = Convolution1D(128, kernel_size = 3)(input_data)
+    cnn_layer2 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer1)
+    cnn_layer3 = Convolution1D(64, kernel_size = 3)(input_data)
+    cnn_layer4 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer3)
+    cnn_layer5 = Convolution1D(32, kernel_size = 3)(cnn_layer4)
+    cnn_layer6 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer5)
+    cnn_layer6 = Flatten()(cnn_layer6)
+    cnn_layer6 = Dense(10, activation = 'relu')(cnn_layer6)
+    attention = attention_3d_block(input_data)
+    lstm_layer1 = LSTM(128, activation = 'tanh', return_sequences = True)(attention)
+    lstm_layer2 = LSTM(64, activation = 'tanh', return_sequences = True)(lstm_layer1)
+    lstm_layer3 = LSTM(32, activation = 'tanh', return_sequences = True)(lstm_layer2)
+    lstm_layer3 = LSTM(32, activation = 'tanh')(lstm_layer2)
+    lstm_layer3 = Dense(10, activation = 'relu')(lstm_layer3)
+    merged = Concatenate(axis = 1)([cnn_layer6, lstm_layer3])
+    # ffnn_layer1 = Convolution1D(256, kernel_size = 3)(merged)
+    # ffnn_layer2 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(ffnn_layer1)
+    # ffnn_layer3 = Flatten()(ffnn_layer2)
+    ffnn_layer4 = Dense(128, activation = 'relu')(merged)
+    ffnn_layer5 = Dropout(0.2)(ffnn_layer4)
+    ffnn_layer6 = Dense(32, activation = 'relu')(ffnn_layer5)
+    out = Dense(1)(ffnn_layer6)
+    return Model(input_data, out)
 
+# RMSE: 39.56266894113846
+# SINGLE LSTM + ATTENTION MODEL: 
+def single_attention_model():
+    input_data = Input(shape=(window_length, X_train.shape[-1]))
+    layer1 = attention_3d_block(input_data)
+    layer2 = LSTM(100, activation = 'tanh', return_sequences = True)(layer1)
+    layer3 = Dropout(0.5)(layer2)
+    layer4 = Dense(30, activation = 'relu')(layer3)
+    layer5 = Dense(20, activation = 'relu')(layer4)
+    out = tf.squeeze(Dense(1)(layer5))
+    return Model(input_data, out)
 
-SINGLE_ATTENTION_VECTOR = False
-
+# CUSTOM ATTENTION BLOCK ----- https://github.com/ZhenghuaNTU/RUL-prediction-using-attention-based-deep-learning-approach
 def attention_3d_block(inputs):
     input_dim = int(inputs.shape[2])
-    print(inputs.shape)
     a = Permute((2, 1))(inputs)
-    print(a.shape)
     a = Reshape((input_dim, window_length))(a) # this line is not useful. It's just to know which dimension is what.
-    print(a.shape)
     a = Dense(window_length, activation='softmax')(a)
-    print(a.shape)
-    if SINGLE_ATTENTION_VECTOR:
-        a = Lambda(lambda x: backend.mean(x, axis=1), name='dim_reduction')(a)
-        a = RepeatVector(input_dim)(a)
-        print(a.shape)
     a_probs = Permute((2, 1), name='attention_vec')(a)
     print(a_probs.shape)
     #output_attention_mul = merge([inputs, a_probs], name='attention_mul', mode='mul')
     output_attention_mul = multiply([inputs, a_probs])
     return output_attention_mul
 
-def custom_att(inputs):
-    x = LSTM(50, activation = 'tanh', return_sequences = False)(inputs)
-    print(x.shape)
-    x = Attention([x[-1], x])
-    return x
-
+# RMSE: 18.612317489911245 (fd001)
+# LSTM + ATTENTION ------- https://github.com/ZhenghuaNTU/RUL-prediction-using-attention-based-deep-learning-approach
 def model_attention():
     input_data = Input(shape=(window_length, X_train.shape[-1]))
     input_extracted = Input(shape = (train_extracted.shape[1],))
@@ -403,8 +448,6 @@ def model_attention():
     ex_layer2 = Dropout(0.2)(ex_layer1)
     ex_layer3 = Dense(10,activation = 'relu')(ex_layer2)
     att_layer1 = attention_3d_block(input_data)
-    # att_layer1 = custom_att(input_data)
-    # att_layer1 = Attention()([query_seq_encoding, value_seq_encoding])
     att_layer2 = LSTM(50, return_sequences=False)(att_layer1) 
     att_layer3 = Dense(50, activation='relu')(att_layer2)
     att_layer4 = Dropout(0.2)(att_layer3)
@@ -415,14 +458,45 @@ def model_attention():
     model = Model([input_data, input_extracted], merged_layer2)
     return model
 
-client_model = model_attention()
-client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))
 
-att_history = client_model.fit([X_train, train_extracted], y_train, epochs=15, validation_data = ([X_val, val_extracted], y_val), batch_size = 100)
+# RMSE: 37.14
+# def combined_model():
+#     input_data = Input(shape=(window_length, X_train.shape[-1]))
+#     input_data2 = Input(shape=(window_length, X_train.shape[-1]))
+#     input_extracted = Input(shape = (train_extracted.shape[1],))
+#     ex_layer1 = Dense(50, activation = 'relu')(input_extracted)
+#     ex_layer2 = Dropout(0.2)(ex_layer1)
+#     ex_layer3 = Dense(10, activation = 'relu')(ex_layer2)
+#     lstm_layer0 = attention_3d_block(input_data)
+#     lstm_layer1 = LSTM(128, activation = 'tanh', return_sequences = True)(lstm_layer0)
+#     lstm_layer2 = LSTM(64, activation = 'tanh', return_sequences = True)(lstm_layer1)
+#     lstm_layer3 = LSTM(32, activation = 'tanh', return_sequences = False)(lstm_layer2)
+#     lstm_layer4 = Dense(50, activation='relu')(lstm_layer3)
+#     lstm_layer5 = Dropout(0.2)(lstm_layer4)
+#     lstm_layer6 = Dense(10, activation='relu')(lstm_layer5)
+#     cnn_layer1 = Convolution1D(128, kernel_size = 3)(input_data2)
+#     cnn_layer2 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer1)
+#     cnn_layer3 = Convolution1D(64, kernel_size = 3)(cnn_layer2)
+#     cnn_layer4 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer3)
+#     cnn_layer5 = Convolution1D(32, kernel_size = 3)(cnn_layer4)
+#     cnn_layer6 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer5)
+#     cnn_layer7 = GlobalAveragePooling1D()(cnn_layer6)
+#     ffnn_layer1 = Concatenate(axis = 1)([cnn_layer7, lstm_layer6, ex_layer3])
+#     ffnn_layer2 = Dense(128, activation = 'relu')(ffnn_layer1)
+#     ffnn_layer3 = Dense(32, activation = 'relu')(ffnn_layer2)
+#     out = Dense(1)(ffnn_layer3)
+#     return Model([input_data, input_data2, input_extracted], out)
+
+client_model = temp_spatial_fusion()
+client_model.summary()
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.0008))
+
+# att_history = client_model.fit(X_train, y_train, epochs=15, validation_data = (X_val, y_val), batch_size = 100)
+att_history = client_model.fit(X_train, y_train, epochs=15, validation_data = (X_val, y_val), batch_size = 64)
 plot_loss(att_history)
 
-train_pred = client_model.predict([X_train, train_extracted])
+train_pred = client_model.predict(X_train)
 testing(y_train, train_pred, 'Train')
 
-test_pred = client_model.predict([X_test, test_extracted]) 
+test_pred = client_model.predict(X_test) 
 testing(y_test, test_pred)

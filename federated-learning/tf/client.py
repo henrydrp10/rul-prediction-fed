@@ -6,8 +6,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
-from keras import Sequential, backend
-from keras.layers import LSTM, Dense, Dropout, Lambda, Input, Permute, RepeatVector, multiply, Concatenate
+from keras.layers import LSTM, Dense, Dropout, Convolution1D, Input, Permute, MaxPool1D , multiply, Concatenate, Flatten
 from keras.models import Model
 from sklearn.metrics import mean_squared_error
 from sklearn import linear_model
@@ -17,8 +16,8 @@ parser = argparse.ArgumentParser(description = 'Choose partition number')
 parser.add_argument('--partition', type = int, help = 'Partition Number')
 args = parser.parse_args()
 
-train_df = pd.read_csv('../FL-data/data/fd001/2 workers/50-50/train_partition_' + str(args.partition) + '.csv', sep=',')
-test_df = pd.read_csv('../FL-data/data/fd001/2 workers/50-50/test_partition_' + str(args.partition) + '.csv', sep=',')
+train_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/90-10/train_partition_' + str(args.partition) + '.csv', sep=',')
+test_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/90-10/test_partition_' + str(args.partition) + '.csv', sep=',')
 
 train_labels_df = pd.DataFrame(train_df.pop('RUL')) 
 test_labels_df = pd.DataFrame(test_df.pop('RUL'))
@@ -58,18 +57,20 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
         for index in range(len(tr_data_eng_arr)):
             tr_data_arr = tr_data_eng_arr[index].to_numpy()
             tr_labels_arr = tr_labels_eng_arr[index].to_numpy()
-            for t in range(tr_data_arr.shape[0] - window_length + 1):
-                tr_data_windows.append(tr_data_arr[t:t+window_length, :])
-                tr_label_windows.append(tr_labels_arr[t+window_length - 1, 0])
+            if tr_data_arr.shape[0] - window_length + 1 > 0:
+                for t in range(tr_data_arr.shape[0] - window_length + 1):
+                    tr_data_windows.append(tr_data_arr[t:t+window_length, :])
+                    tr_label_windows.append(tr_labels_arr[t+window_length - 1, 0])
 
         val_data_windows = []
         val_label_windows = []
         for index in range(len(val_data_eng_arr)):
             val_data_arr = val_data_eng_arr[index].to_numpy()
             val_labels_arr = val_labels_eng_arr[index].to_numpy()
-            for t in range(val_data_arr.shape[0] - window_length + 1):
-                val_data_windows.append(val_data_arr[t:t+window_length, :])
-                val_label_windows.append(val_labels_arr[t+window_length - 1, 0])
+            if val_data_arr.shape[0] - window_length + 1 > 0:
+                for t in range(val_data_arr.shape[0] - window_length + 1):
+                    val_data_windows.append(val_data_arr[t:t+window_length, :])
+                    val_label_windows.append(val_labels_arr[t+window_length - 1, 0])
 
         return np.array(tr_data_windows), np.array(tr_label_windows), np.array(val_data_windows), np.array(val_label_windows)
 
@@ -96,14 +97,15 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
         for index in range(len(data_eng_arr)):
             data_arr = data_eng_arr[index].to_numpy()
             labels_arr = labels_eng_arr[index].to_numpy()
-            data_windows.append(data_arr[-window_length:, :])
-            label_windows.append(labels_arr[-1, 0])
+            if data_arr.shape[0] - window_length > 0:
+                data_windows.append(data_arr[-window_length:, :])
+                label_windows.append(labels_arr[-1, 0])
 
         return np.array(data_windows), np.array(label_windows)
 
 ############ MODEL #######################################################
 
-window_length = 20
+window_length = 30
 X_train, y_train, X_val, y_val = get_windows(train_df, train_labels_df, window_length, mode='train')
 X_test, y_test = get_windows(test_df, test_labels_df, window_length, mode = 'test')
 
@@ -111,69 +113,38 @@ y_train = np.expand_dims(y_train, axis=1)
 y_val = np.expand_dims(y_val, axis=1)
 y_test = np.expand_dims(y_test, axis=1)
 
-regr = linear_model.LinearRegression() # feature of linear coefficient
-
-def fea_extract(data): # feature extraction of two features
-    fea = []
-    #print(data.shape)
-    x = np.array(range(data.shape[0]))
-    for i in range(data.shape[1]):
-        fea.append(np.mean(data[:,i]))
-        regr.fit(x.reshape(-1,1),np.ravel(data[:,i]))
-        print(np.array(fea).shape)
-        fea = fea+list(regr.coef_)
-        print(np.array(fea).shape)
-    return fea
-
-train_extracted = fea_extract(X_train)
-val_extracted = fea_extract(X_val)
-test_extracted = fea_extract(X_test)
-
-# client_model = Sequential()
-# client_model.add(Convolution1D(128, 3, activation='relu', input_shape = (window_length, X_train.shape[-1])))
-# client_model.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-# client_model.add(Convolution1D(64, 3, activation='relu'))
-# client_model.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-# client_model.add(Convolution1D(32, 3, activation='relu'))
-# client_model.add(MaxPool1D(pool_size = 2, padding = 'same', strides = 2))
-# client_model.add(LSTM(128, activation = 'relu', return_sequences = True))
-# client_model.add(LSTM(64, activation = 'relu', return_sequences = True))
-# client_model.add(LSTM(32, activation = 'relu'))
-# client_model.add(Dense(1))
-
-SINGLE_ATTENTION_VECTOR = False
-
 def attention_3d_block(inputs):
     input_dim = int(inputs.shape[2])
     a = Permute((2, 1))(inputs)
     a = Dense(window_length, activation='softmax')(a)
-    if SINGLE_ATTENTION_VECTOR:
-        a = Lambda(lambda x: backend.mean(x, axis=1), name='dim_reduction')(a)
-        a = RepeatVector(input_dim)(a)
     a_probs = Permute((2, 1), name='attention_vec')(a)
     #output_attention_mul = merge([inputs, a_probs], name='attention_mul', mode='mul')
     output_attention_mul = multiply([inputs, a_probs])
     return output_attention_mul
 
-def model_attention():
-    inputs = Input(shape=(window_length, X_train.shape[-1]))
-    model_input_fea = Input(shape = (train_extracted.shape[1],))
-    densefea1 = Dense(50,activation = 'relu')(model_input_fea)
-    dropfea = Dropout(0.2)(densefea1)
-    densefea2 = Dense(10,activation = 'relu')(dropfea)
-    attention_mul = attention_3d_block(inputs)
-    lstm_out = LSTM(50, return_sequences=False)(attention_mul) 
-    dense_0 = Dense(50, activation='relu')(lstm_out)
-    drop1 = Dropout(0.2)(dense_0)
-    dense_1 = Dense(10, activation='relu')(drop1) 
-    mymerge = Concatenate([dense_1, densefea2])
-    drop2 = Dropout(0.2)(mymerge) 
-    output = Dense(1, activation='linear')(drop2)
-    model = Model([inputs,model_input_fea],output)
-    return model
+def temporal_spatial_fusion_with_attention_model():
+    input_data = Input(shape=(window_length, X_train.shape[-1]))
+    cnn_layer1 = Convolution1D(64, kernel_size = 3)(input_data)
+    cnn_layer2 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer1)
+    cnn_layer3 = Convolution1D(32, kernel_size = 3)(cnn_layer2)
+    cnn_layer4 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer3)
+    cnn_layer5 = Flatten()(cnn_layer4)
+    cnn_layer6 = Dense(10, activation = 'relu')(cnn_layer5)
+    attention = attention_3d_block(input_data)
+    lstm_layer1 = LSTM(128, activation = 'tanh', return_sequences = True)(attention)
+    lstm_layer2 = LSTM(64, activation = 'tanh', return_sequences = True)(lstm_layer1)
+    lstm_layer3 = LSTM(32, activation = 'tanh', return_sequences = True)(lstm_layer2)
+    lstm_layer4 = LSTM(32, activation = 'tanh')(lstm_layer3)
+    lstm_layer5 = Dense(10, activation = 'relu')(lstm_layer4)
+    merged = Concatenate(axis = 1)([cnn_layer6, lstm_layer5])
+    ffnn_layer1 = Dense(128, activation = 'relu')(merged)
+    ffnn_layer2 = Dropout(0.2)(ffnn_layer1)
+    ffnn_layer3 = Dense(32, activation = 'relu')(ffnn_layer2)
+    out = Dense(1)(ffnn_layer3)
+    return Model(input_data, out)
 
-client_model = model_attention()
-client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.01))
+client_model = temporal_spatial_fusion_with_attention_model()
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.0008))
 
 # Define Flower client
 class TEDClient(fl.client.NumPyClient):
@@ -183,7 +154,7 @@ class TEDClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         client_model.set_weights(parameters)
-        client_model.fit(X_train, y_train, epochs=100, validation_data = (X_val, y_val), batch_size = 512)
+        client_model.fit(X_train, y_train, epochs=5, validation_data = (X_val, y_val), batch_size = 64)
         return client_model.get_weights(), len(X_train), {}
 
     def evaluate(self, parameters, config):
