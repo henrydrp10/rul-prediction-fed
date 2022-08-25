@@ -1,4 +1,3 @@
-from pyexpat import model
 from tkinter import SINGLE
 from xmlrpc import client
 import flwr as fl
@@ -6,18 +5,20 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
+from keras import Sequential
 from keras.layers import LSTM, Dense, Dropout, Convolution1D, Input, Permute, MaxPool1D , multiply, Concatenate, Flatten
 from keras.models import Model
 from sklearn.metrics import mean_squared_error
 from sklearn import linear_model
+from sklearn import preprocessing
 import argparse
 
 parser = argparse.ArgumentParser(description = 'Choose partition number')
 parser.add_argument('--partition', type = int, help = 'Partition Number')
 args = parser.parse_args()
 
-train_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/90-10/train_partition_' + str(args.partition) + '.csv', sep=',')
-test_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/90-10/test_partition_' + str(args.partition) + '.csv', sep=',')
+train_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/50-50/train_partition_' + str(args.partition) + '.csv', sep=',')
+test_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/50-50/test_partition_' + str(args.partition) + '.csv', sep=',')
 
 train_labels_df = pd.DataFrame(train_df.pop('RUL')) 
 test_labels_df = pd.DataFrame(test_df.pop('RUL'))
@@ -97,7 +98,7 @@ def get_windows(data_df, labels_df, window_length, mode = 'train'):
         for index in range(len(data_eng_arr)):
             data_arr = data_eng_arr[index].to_numpy()
             labels_arr = labels_eng_arr[index].to_numpy()
-            if data_arr.shape[0] - window_length > 0:
+            if data_arr.shape[0] - window_length + 1 > 0:
                 data_windows.append(data_arr[-window_length:, :])
                 label_windows.append(labels_arr[-1, 0])
 
@@ -113,38 +114,75 @@ y_train = np.expand_dims(y_train, axis=1)
 y_val = np.expand_dims(y_val, axis=1)
 y_test = np.expand_dims(y_test, axis=1)
 
-def attention_3d_block(inputs):
-    input_dim = int(inputs.shape[2])
-    a = Permute((2, 1))(inputs)
-    a = Dense(window_length, activation='softmax')(a)
-    a_probs = Permute((2, 1), name='attention_vec')(a)
-    #output_attention_mul = merge([inputs, a_probs], name='attention_mul', mode='mul')
-    output_attention_mul = multiply([inputs, a_probs])
-    return output_attention_mul
+X_train = X_train[:,:,2:]
+X_val = X_val[:,:,2:]
+X_test = X_test[:,:,2:]
 
-def temporal_spatial_fusion_with_attention_model():
-    input_data = Input(shape=(window_length, X_train.shape[-1]))
-    cnn_layer1 = Convolution1D(64, kernel_size = 3)(input_data)
-    cnn_layer2 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer1)
-    cnn_layer3 = Convolution1D(32, kernel_size = 3)(cnn_layer2)
-    cnn_layer4 = MaxPool1D(pool_size = 2, padding = 'same', strides = 2)(cnn_layer3)
-    cnn_layer5 = Flatten()(cnn_layer4)
-    cnn_layer6 = Dense(10, activation = 'relu')(cnn_layer5)
-    attention = attention_3d_block(input_data)
-    lstm_layer1 = LSTM(128, activation = 'tanh', return_sequences = True)(attention)
-    lstm_layer2 = LSTM(64, activation = 'tanh', return_sequences = True)(lstm_layer1)
-    lstm_layer3 = LSTM(32, activation = 'tanh', return_sequences = True)(lstm_layer2)
-    lstm_layer4 = LSTM(32, activation = 'tanh')(lstm_layer3)
-    lstm_layer5 = Dense(10, activation = 'relu')(lstm_layer4)
-    merged = Concatenate(axis = 1)([cnn_layer6, lstm_layer5])
-    ffnn_layer1 = Dense(128, activation = 'relu')(merged)
-    ffnn_layer2 = Dropout(0.2)(ffnn_layer1)
-    ffnn_layer3 = Dense(32, activation = 'relu')(ffnn_layer2)
-    out = Dense(1)(ffnn_layer3)
-    return Model(input_data, out)
+def mean_and_polynomial_fitting(data_set):
+    mean_trends = []
+    for window in data_set:
+        sensor_means = np.mean(window, axis = 0)
+        coefs = []
+        for i in range(window.shape[-1]):
+            coefs.append(np.polyfit(range(window.shape[0]), window[:,i], 1)[0])
+        mean_trend = np.concatenate((sensor_means, np.array(coefs)), axis = 0)
+        mean_trends.append(mean_trend)
+    return np.array(mean_trends)
 
-client_model = temporal_spatial_fusion_with_attention_model()
-client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.0008))
+# train_extracted = mean_and_polynomial_fitting(X_train)
+# val_extracted = mean_and_polynomial_fitting(X_val)
+# test_extracted = mean_and_polynomial_fitting(X_test)
+
+# train_extracted = np.array(train_extracted)
+# val_extracted = np.array(val_extracted)
+# test_extracted = np.array(test_extracted)
+
+# scale = preprocessing.MinMaxScaler()
+# train_extracted = scale.fit_transform(train_extracted)
+# val_extracted = scale.fit_transform(val_extracted)
+# test_extracted = scale.fit_transform(test_extracted)
+
+X_train = mean_and_polynomial_fitting(X_train)
+X_val = mean_and_polynomial_fitting(X_val)
+X_test = mean_and_polynomial_fitting(X_test)
+
+X_train = np.array(X_train)
+X_val = np.array(X_val)
+X_test = np.array(X_test)
+
+scale = preprocessing.MinMaxScaler()
+X_train = scale.fit_transform(X_train)
+X_val = scale.fit_transform(X_val)
+X_test = scale.fit_transform(X_test)
+
+
+client_model = Sequential()
+client_model.add(Dense(64, activation = 'relu', input_dim = X_train.shape[-1]))
+client_model.add(Dropout(0.5))
+client_model.add(Dense(128, activation = 'relu'))
+client_model.add(Dropout(0.5))
+client_model.add(Dense(256, activation = 'relu'))
+client_model.add(Dense(1))
+
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))
+
+# def trend_lstm():
+#     input_data = Input(shape=(window_length, X_train.shape[-1]))
+#     input_extracted = Input(shape=(train_extracted.shape[-1],))
+#     mlp_layer1 = Dense(64, activation = 'relu')(input_extracted)
+#     mlp_layer2 = Dropout(0.25)(mlp_layer1)
+#     mlp_layer3 = Dense(10, activation = 'relu')(mlp_layer2)
+#     lstm_layer1 = LSTM(64, activation = 'tanh', return_sequences = True)(input_data)
+#     lstm_layer2 = LSTM(32, activation = 'tanh')(lstm_layer1)
+#     lstm_layer3 = Dense(10, activation = 'relu')(lstm_layer2)
+#     merged = Concatenate(axis = 1)([mlp_layer3, lstm_layer3])
+#     ffnn_layer1 = Dense(32, activation = 'relu')(merged)
+#     ffnn_layer2 = Dropout(0.25)(ffnn_layer1)
+#     out = Dense(1)(ffnn_layer2)
+#     return Model([input_data, input_extracted], out)
+
+# client_model = trend_lstm()
+# client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.0005))
 
 # Define Flower client
 class TEDClient(fl.client.NumPyClient):
@@ -154,7 +192,7 @@ class TEDClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         client_model.set_weights(parameters)
-        client_model.fit(X_train, y_train, epochs=5, validation_data = (X_val, y_val), batch_size = 64)
+        client_model.fit(X_train, y_train, epochs=5, validation_data = (X_val, y_val), batch_size = 256)
         return client_model.get_weights(), len(X_train), {}
 
     def evaluate(self, parameters, config):
@@ -163,7 +201,6 @@ class TEDClient(fl.client.NumPyClient):
         mse = mean_squared_error(y_test, test_cnn_pred)
         rmse = np.sqrt(mse)
         return rmse, len(y_test), {"rmse": rmse}
-
 
 # Start Flower client
 fl.client.start_numpy_client(server_address = "127.0.0.1:8080", client=TEDClient())
