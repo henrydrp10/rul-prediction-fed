@@ -17,8 +17,8 @@ parser = argparse.ArgumentParser(description = 'Choose partition number')
 parser.add_argument('--partition', type = int, help = 'Partition Number')
 args = parser.parse_args()
 
-train_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/50-50/train_partition_' + str(args.partition) + '.csv', sep=',')
-test_df = pd.read_csv('../FL-data/tf/fd001/scaled/2 workers/50-50/test_partition_' + str(args.partition) + '.csv', sep=',')
+train_df = pd.read_csv('../FL-data/tf/fd004/scaled/2 workers/90-10/train_partition_' + str(args.partition) + '.csv', sep=',')
+test_df = pd.read_csv('../FL-data/tf/fd004/scaled/2 workers/90-10/test_partition_' + str(args.partition) + '.csv', sep=',')
 
 train_labels_df = pd.DataFrame(train_df.pop('RUL')) 
 test_labels_df = pd.DataFrame(test_df.pop('RUL'))
@@ -164,7 +164,7 @@ client_model.add(Dropout(0.5))
 client_model.add(Dense(256, activation = 'relu'))
 client_model.add(Dense(1))
 
-client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.001))
+client_model.compile(loss='mean_squared_error', optimizer = keras.optimizers.Adam(learning_rate = 0.0005))
 
 # def trend_lstm():
 #     input_data = Input(shape=(window_length, X_train.shape[-1]))
